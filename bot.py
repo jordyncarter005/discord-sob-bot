@@ -121,13 +121,13 @@ bot_locked = False
 # ==================================================
 
 def today_string():
-return datetime.date.today().isoformat()
+    return datetime.date.today().isoformat()
 
 def yesterday_string():
-return (
-datetime.date.today()
-- datetime.timedelta(days=1)
-).isoformat()
+    return (
+        datetime.date.today()
+        - datetime.timedelta(days=1)
+    ).isoformat()
 
 # ==================================================
 
@@ -137,7 +137,7 @@ datetime.date.today()
 
 def ensure_user(user_id: int):
 
-```
+ 
 cursor.execute(
     """
     SELECT *
@@ -166,11 +166,11 @@ cursor.execute(
 )
 
 db.commit()
-```
+ 
 
 def get_total_sobs(user_id: int):
 
-```
+ 
 ensure_user(user_id)
 
 cursor.execute(
@@ -185,7 +185,7 @@ cursor.execute(
 row = cursor.fetchone()
 
 return row["sobs"]
-```
+ 
 
 # ==================================================
 
@@ -195,7 +195,6 @@ return row["sobs"]
 
 def add_daily_sob(user_id: int):
 
-```
 ensure_user(user_id)
 
 today = today_string()
@@ -217,14 +216,12 @@ cursor.execute(
 )
 
 db.commit()
-```
 
 def get_daily_sobs(
 user_id: int,
 date: str = None
 ):
 
-```
 if date is None:
     date = today_string()
 
@@ -244,7 +241,7 @@ if row:
     return row["sobs"]
 
 return 0
-```
+ 
 
 # ==================================================
 
@@ -254,7 +251,7 @@ return 0
 
 def add_sob(user_id: int):
 
-```
+ 
 ensure_user(user_id)
 
 cursor.execute(
@@ -269,7 +266,7 @@ cursor.execute(
 add_daily_sob(user_id)
 
 db.commit()
-```
+ 
 
 # ==================================================
 
@@ -279,7 +276,7 @@ db.commit()
 
 def update_streaks():
 
-```
+ 
 yesterday = yesterday_string()
 
 cursor.execute(
@@ -346,7 +343,7 @@ for row in users:
     )
 
 db.commit()
-```
+ 
 
 # ==================================================
 
@@ -358,7 +355,7 @@ def set_champion_channel(
 channel_id: int
 ):
 
-```
+ 
 cursor.execute(
     """
     INSERT OR REPLACE
@@ -372,11 +369,11 @@ cursor.execute(
 )
 
 db.commit()
-```
+ 
 
 def get_champion_channel():
 
-```
+ 
 cursor.execute(
     """
     SELECT value
@@ -392,7 +389,7 @@ if row:
     return int(row["value"])
 
 return None
-```
+ 
 
 # ==================================================
 
@@ -405,7 +402,7 @@ return bot_locked
 
 async def lock_check_ctx(ctx):
 
-```
+ 
 if is_locked():
 
     await ctx.send(
@@ -415,7 +412,7 @@ if is_locked():
     return True
 
 return False
-```
+ 
 # ==================================================
 # REACTION DUPLICATE PROTECTION
 # ==================================================
