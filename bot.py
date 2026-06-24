@@ -7,11 +7,6 @@ import datetime
 import re
 from dotenv import load_dotenv
 
-bot = commands.Bot(command_prefix="slate ", intents=intents)
-
-bot.remove_command("help")
-
-SOB_EMOJI = "😭"
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 
@@ -333,64 +328,7 @@ async def enable_slash(interaction: discord.Interaction):
     save_lock()
 
     await interaction.response.send_message("✅ Enabled")
-# --------------------
-# HELP COMMAND
-# --------------------
 
-@bot.command(name="help")
-async def help_command(ctx):
-
-    embed = discord.Embed(
-        title="📖 Slate Bot Commands",
-        description="Available commands for the bot.",
-        color=0x5865F2
-    )
-
-    embed.add_field(
-        name="😭 Sob Commands",
-        value=(
-            "`slate mysobs` - View your sob count\n"
-            "`slate topsobs` - View the leaderboard"
-        ),
-        inline=False
-    )
-
-    embed.add_field(
-        name="🛠️ Admin Commands",
-        value=(
-            "`slate say <message>` - Make the bot send a message\n"
-            "`slate seal @user [time]` - Timeout a user\n"
-            "`slate unseal @user` - Remove timeout\n"
-            "`slate disable` - Disable bot commands\n"
-            "`slate enable` - Enable bot commands"
-        ),
-        inline=False
-    )
-
-    embed.add_field(
-        name="⏱️ Seal Duration Examples",
-        value=(
-            "`10m` = 10 minutes\n"
-            "`1h` = 1 hour\n"
-            "`2d` = 2 days"
-        ),
-        inline=False
-    )
-
-    embed.add_field(
-        name="Slash Commands",
-        value=(
-            "`/mysobs`\n"
-            "`/topsobs`\n"
-            "`/disable`\n"
-            "`/enable`"
-        ),
-        inline=False
-    )
-
-    embed.set_footer(text="Prefix: slate ")
-
-    await ctx.send(embed=embed) 
 # --------------------
 # RUN BOT
 # --------------------
