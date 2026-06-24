@@ -18,10 +18,12 @@ intents.reactions = True
 bot = commands.Bot(command_prefix="slate ", intents=intents)
 
 SOB_EMOJI = "😭"
+
 DATA_FILE = "sob_scores.json"
+LOCK_FILE = "bot_lock.json"
 
 # --------------------
-# DATA
+# LOAD DATA
 # --------------------
 
 if os.path.exists(DATA_FILE):
@@ -33,6 +35,23 @@ else:
 def save_scores():
     with open(DATA_FILE, "w") as f:
         json.dump(scores, f)
+
+# --------------------
+# BOT LOCK SYSTEM
+# --------------------
+
+if os.path.exists(LOCK_FILE):
+    with open(LOCK_FILE, "r") as f:
+        bot_locked = json.load(f).get("locked", False)
+else:
+    bot_locked = False
+
+def save_lock():
+    with open(LOCK_FILE, "w") as f:
+        json.dump({"locked": bot_locked}, f)
+
+def is_locked():
+    return bot_locked
 
 # --------------------
 # DURATION PARSER
@@ -66,11 +85,8 @@ def parse_duration(text: str):
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
-    try:
-        synced = await bot.tree.sync()
-        print(f"Slash commands synced: {len(synced)}")
-    except Exception as e:
-        print(e)
+    await bot.tree.sync()
+    print("Slash commands synced")
 
 # --------------------
 # REACTION TRACKING
@@ -90,20 +106,35 @@ async def on_raw_reaction_add(payload):
         message = await channel.fetch_message(payload.message_id)
 
         user_id = str(message.author.id)
+
         scores[user_id] = scores.get(user_id, 0) + 1
         save_scores()
 
-    except Exception as e:
-        print(e)
+    except:
+        pass
 
 # --------------------
-# TOP SOBS (shared logic)
+# PREFIX COMMAND GUARD
 # --------------------
 
-async def build_leaderboard(ctx):
+async def lock_check_ctx(ctx):
+    if is_locked():
+        await ctx.send("🚫 Bot commands are currently disabled.")
+        return True
+    return False
+
+# --------------------
+# TOP SOBS
+# --------------------
+
+@bot.command(name="topsobs")
+async def topsobs(ctx):
+
+    if await lock_check_ctx(ctx):
+        return
 
     if not scores:
-        return "No 😭 reactions tracked yet.", None
+        return await ctx.send("No 😭 reactions tracked yet.")
 
     sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
@@ -111,36 +142,24 @@ async def build_leaderboard(ctx):
 
     medals = ["🥇", "🥈", "🥉"]
 
+    user_id_check = str(ctx.author.id)
     user_rank = None
-    user_count = scores.get(str(ctx.user.id if isinstance(ctx, discord.Interaction) else ctx.author.id), 0)
+    user_count = scores.get(user_id_check, 0)
 
-    user_id_check = str(ctx.user.id if isinstance(ctx, discord.Interaction) else ctx.author.id)
-
-    for rank, (uid, count) in enumerate(sorted_scores, start=1):
+    for rank, (uid, _) in enumerate(sorted_scores, start=1):
         if uid == user_id_check:
             user_rank = rank
             break
 
     for rank, (user_id, count) in enumerate(sorted_scores[:5], start=1):
 
-        member = None
-
-        if ctx.guild:
-            member = ctx.guild.get_member(int(user_id))
-
-        if member:
-            name = member.display_name
-        else:
-            try:
-                user = await bot.fetch_user(int(user_id))
-                name = user.name
-            except:
-                name = f"User {user_id}"
-
-        prefix = medals[rank - 1] if rank <= 3 else f"#{rank}"
+        member = ctx.guild.get_member(int(user_id))
+        name = member.display_name if member else f"User {user_id}"
 
         if user_id == user_id_check:
             name = f"⭐ {name} (You)"
+
+        prefix = medals[rank - 1] if rank <= 3 else f"#{rank}"
 
         embed.add_field(
             name=f"{prefix} {name}",
@@ -151,15 +170,33 @@ async def build_leaderboard(ctx):
     if user_rank:
         embed.set_footer(text=f"Your Rank: #{user_rank} • 😭 {user_count} sobs")
 
-    return None, embed
+    await ctx.send(embed=embed)
 
-# =====================================================
-# PREFIX COMMANDS
-# =====================================================
+# --------------------
+# MY SOBS
+# --------------------
+
+@bot.command(name="mysobs")
+async def mysobs(ctx):
+
+    if await lock_check_ctx(ctx):
+        return
+
+    count = scores.get(str(ctx.author.id), 0)
+
+    await ctx.send(f"😭 You have {count} sob reactions.")
+
+# --------------------
+# SAY
+# --------------------
 
 @bot.command(name="say")
 @commands.has_permissions(administrator=True)
 async def say(ctx, *, message):
+
+    if await lock_check_ctx(ctx):
+        return
+
     try:
         await ctx.message.delete()
     except:
@@ -167,35 +204,20 @@ async def say(ctx, *, message):
 
     await ctx.send(message)
 
-@bot.command(name="topsobs")
-async def topsobs(ctx):
-    _, embed = await build_leaderboard(ctx)
-    if embed:
-        await ctx.send(embed=embed)
-    else:
-        await ctx.send("No data.")
+# --------------------
+# SEAL SYSTEM
+# --------------------
 
-@bot.command(name="mysobs")
-async def mysobs(ctx):
-    count = scores.get(str(ctx.author.id), 0)
-
-    embed = discord.Embed(
-        title="😭 Your Sob Count",
-        description=f"You have {count} sob reactions.",
-        color=0x5865F2
-    )
-
-    await ctx.send(embed=embed)
-
-# SEAL PREFIX
 @bot.command(name="seal")
 @commands.has_permissions(administrator=True)
 async def seal(ctx, member: discord.Member, duration: str = None):
 
+    if await lock_check_ctx(ctx):
+        return
+
     if member.timed_out_until is not None:
         await member.timeout(None)
-        await ctx.send(f"🔓 {member.mention} unsealed.")
-        return
+        return await ctx.send(f"🔓 {member.mention} unsealed.")
 
     if duration is None:
         td = datetime.timedelta(hours=1)
@@ -203,68 +225,97 @@ async def seal(ctx, member: discord.Member, duration: str = None):
     else:
         td = parse_duration(duration)
         if not td:
-            await ctx.send("❌ Invalid format.")
-            return
+            return await ctx.send("❌ Invalid format (10m, 1h, 2d).")
         label = duration
 
-    await member.timeout(td, reason=f"Sealed by {ctx.author}")
-    await ctx.send(f"🔒 {member.mention} sealed for {label}")
+    try:
+        await member.timeout(td, reason=f"Sealed by {ctx.author}")
+        await ctx.send(f"🔒 {member.mention} sealed for {label}")
+    except:
+        await ctx.send("❌ Missing permissions.")
 
 @bot.command(name="unseal")
 @commands.has_permissions(administrator=True)
 async def unseal(ctx, member: discord.Member):
-    await member.timeout(None)
-    await ctx.send(f"🔓 {member.mention} unsealed")
 
-# =====================================================
-# SLASH COMMANDS
-# =====================================================
-
-@bot.tree.command(name="say", description="Make the bot say something (admin only)")
-@app_commands.checks.has_permissions(administrator=True)
-async def say_slash(interaction: discord.Interaction, message: str):
-    await interaction.response.send_message(message)
-
-@bot.tree.command(name="mysobs", description="Check your sob count")
-async def mysobs_slash(interaction: discord.Interaction):
-    count = scores.get(str(interaction.user.id), 0)
-    await interaction.response.send_message(f"😭 You have {count} sob reactions.")
-
-@bot.tree.command(name="topsobs", description="Top sob leaderboard")
-async def topsobs_slash(interaction: discord.Interaction):
-    _, embed = await build_leaderboard(interaction)
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="seal", description="Timeout a user (toggle + duration support)")
-@app_commands.checks.has_permissions(administrator=True)
-async def seal_slash(interaction: discord.Interaction, member: discord.Member, duration: str = None):
-
-    if member.timed_out_until is not None:
-        await member.timeout(None)
-        await interaction.response.send_message(f"🔓 {member.mention} unsealed.")
+    if await lock_check_ctx(ctx):
         return
 
-    if duration is None:
-        td = datetime.timedelta(hours=1)
-        label = "1h"
-    else:
-        td = parse_duration(duration)
-        if not td:
-            await interaction.response.send_message("❌ Invalid format (10m, 1h, 2d).")
-            return
-        label = duration
-
-    await member.timeout(td, reason=f"Sealed by {interaction.user}")
-    await interaction.response.send_message(f"🔒 {member.mention} sealed for {label}")
-
-@bot.tree.command(name="unseal", description="Remove timeout from a user")
-@app_commands.checks.has_permissions(administrator=True)
-async def unseal_slash(interaction: discord.Interaction, member: discord.Member):
     await member.timeout(None)
-    await interaction.response.send_message(f"🔓 {member.mention} unsealed.")
+    await ctx.send(f"🔓 {member.mention} unsealed.")
 
 # --------------------
-# RUN
+# BOT LOCK COMMANDS
+# --------------------
+
+@bot.command(name="disable")
+@commands.has_permissions(administrator=True)
+async def disable(ctx):
+
+    global bot_locked
+    bot_locked = True
+    save_lock()
+
+    await ctx.send("🚫 Bot commands disabled.")
+
+@bot.command(name="enable")
+@commands.has_permissions(administrator=True)
+async def enable(ctx):
+
+    global bot_locked
+    bot_locked = False
+    save_lock()
+
+    await ctx.send("✅ Bot commands enabled.")
+
+# --------------------
+# SLASH COMMANDS
+# --------------------
+
+def lock_check_interaction(interaction: discord.Interaction):
+    if is_locked():
+        return True
+    return False
+
+@bot.tree.command(name="mysobs")
+async def mysobs_slash(interaction: discord.Interaction):
+
+    if is_locked():
+        return await interaction.response.send_message("🚫 Disabled", ephemeral=True)
+
+    count = scores.get(str(interaction.user.id), 0)
+    await interaction.response.send_message(f"😭 {count} sobs")
+
+@bot.tree.command(name="topsobs")
+async def topsobs_slash(interaction: discord.Interaction):
+
+    if is_locked():
+        return await interaction.response.send_message("🚫 Disabled", ephemeral=True)
+
+    await interaction.response.send_message("Use prefix version for now (or I can upgrade this).")
+
+@bot.tree.command(name="disable")
+@app_commands.checks.has_permissions(administrator=True)
+async def disable_slash(interaction: discord.Interaction):
+
+    global bot_locked
+    bot_locked = True
+    save_lock()
+
+    await interaction.response.send_message("🚫 Disabled")
+
+@bot.tree.command(name="enable")
+@app_commands.checks.has_permissions(administrator=True)
+async def enable_slash(interaction: discord.Interaction):
+
+    global bot_locked
+    bot_locked = False
+    save_lock()
+
+    await interaction.response.send_message("✅ Enabled")
+
+# --------------------
+# RUN BOT
 # --------------------
 
 bot.run(TOKEN)
