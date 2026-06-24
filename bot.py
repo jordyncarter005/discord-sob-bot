@@ -90,7 +90,7 @@ async def topsobs(ctx):
             break
 
     # Show top 10
-    for rank, (user_id, count) in enumerate(sorted_scores[:10], start=1):
+    for rank, (user_id, count) in enumerate(sorted_scores[:5], start=1):
 
         member = ctx.guild.get_member(int(user_id))
 
