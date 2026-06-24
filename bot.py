@@ -1,4 +1,3 @@
-```python
 import discord
 from discord.ext import commands
 import json
@@ -171,4 +170,3 @@ async def say_error(ctx, error):
         )
 
 bot.run(TOKEN)
-```
