@@ -57,7 +57,7 @@ async def on_raw_reaction_add(payload):
     except Exception as e:
         print(f"Error tracking reaction: {e}")
 
-# TOP SOBBERS LEADERBOARD (EMBED)
+# TOP SOBBERS LEADERBOARD
 @bot.command(name="topsobs")
 async def topsobs(ctx):
 
@@ -88,7 +88,7 @@ async def topsobs(ctx):
             except:
                 name = f"User {user_id}"
 
-        prefix = medals[rank-1] if rank <= 3 else f"#{rank}"
+        prefix = medals[rank - 1] if rank <= 3 else f"#{rank}"
 
         embed.add_field(
             name=f"{prefix} {name}",
@@ -114,5 +114,22 @@ async def mysobs(ctx):
     embed.set_thumbnail(url=ctx.author.display_avatar.url)
 
     await ctx.send(embed=embed)
+
+# SAY COMMAND
+@bot.command(name="say")
+@commands.has_permissions(administrator=True)
+async def say(ctx, *, message):
+    try:
+        await ctx.message.delete()  # Delete the user's command message
+    except discord.Forbidden:
+        pass
+
+    await ctx.send(message)
+
+# Error if user isn't an admin
+@say.error
+async def say_error(ctx, error):
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("❌ You need administrator permissions to use this command.")
 
 bot.run(TOKEN)
