@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import json
 import os
 import datetime
@@ -8,9 +9,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
-
-# 🔐 PUT YOUR DISCORD USER ID HERE
-OWNER_ID = 926720419002732575
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -22,9 +20,10 @@ bot = commands.Bot(command_prefix="slate ", intents=intents)
 SOB_EMOJI = "😭"
 
 DATA_FILE = "sob_scores.json"
+LOCK_FILE = "bot_lock.json"
 
 # --------------------
-# DATA LOAD
+# LOAD DATA
 # --------------------
 
 if os.path.exists(DATA_FILE):
@@ -38,22 +37,21 @@ def save_scores():
         json.dump(scores, f)
 
 # --------------------
-# OWNER CHECKS
+# BOT LOCK SYSTEM
 # --------------------
 
-def is_owner(user_id: int):
-    return user_id == OWNER_ID
+if os.path.exists(LOCK_FILE):
+    with open(LOCK_FILE, "r") as f:
+        bot_locked = json.load(f).get("locked", False)
+else:
+    bot_locked = False
 
-async def owner_only_ctx(ctx):
-    if ctx.author.id != OWNER_ID:
-        await ctx.send("🚫 Only the bot owner can use this bot.")
-        return True
-    return False
+def save_lock():
+    with open(LOCK_FILE, "w") as f:
+        json.dump({"locked": bot_locked}, f)
 
-def owner_only_interaction(interaction: discord.Interaction):
-    if interaction.user.id != OWNER_ID:
-        return False
-    return True
+def is_locked():
+    return bot_locked
 
 # --------------------
 # DURATION PARSER
@@ -91,7 +89,7 @@ async def on_ready():
     print("Slash commands synced")
 
 # --------------------
-# REACTIONS
+# REACTION TRACKING
 # --------------------
 
 @bot.event
@@ -108,11 +106,22 @@ async def on_raw_reaction_add(payload):
         message = await channel.fetch_message(payload.message_id)
 
         user_id = str(message.author.id)
+
         scores[user_id] = scores.get(user_id, 0) + 1
         save_scores()
 
     except:
         pass
+
+# --------------------
+# PREFIX COMMAND GUARD
+# --------------------
+
+async def lock_check_ctx(ctx):
+    if is_locked():
+        await ctx.send("🚫 Bot commands are currently disabled.")
+        return True
+    return False
 
 # --------------------
 # TOP SOBS
@@ -121,15 +130,17 @@ async def on_raw_reaction_add(payload):
 @bot.command(name="topsobs")
 async def topsobs(ctx):
 
-    if await owner_only_ctx(ctx):
+    if await lock_check_ctx(ctx):
         return
 
     if not scores:
-        return await ctx.send("No data.")
+        return await ctx.send("No 😭 reactions tracked yet.")
 
     sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
     embed = discord.Embed(title="😭 Top Sobbers", color=0x5865F2)
+
+    medals = ["🥇", "🥈", "🥉"]
 
     user_id_check = str(ctx.author.id)
     user_rank = None
@@ -148,8 +159,10 @@ async def topsobs(ctx):
         if user_id == user_id_check:
             name = f"⭐ {name} (You)"
 
+        prefix = medals[rank - 1] if rank <= 3 else f"#{rank}"
+
         embed.add_field(
-            name=f"#{rank} {name}",
+            name=f"{prefix} {name}",
             value=f"😭 {count} sobs",
             inline=False
         )
@@ -166,10 +179,11 @@ async def topsobs(ctx):
 @bot.command(name="mysobs")
 async def mysobs(ctx):
 
-    if await owner_only_ctx(ctx):
+    if await lock_check_ctx(ctx):
         return
 
     count = scores.get(str(ctx.author.id), 0)
+
     await ctx.send(f"😭 You have {count} sob reactions.")
 
 # --------------------
@@ -177,9 +191,10 @@ async def mysobs(ctx):
 # --------------------
 
 @bot.command(name="say")
+@commands.has_permissions(administrator=True)
 async def say(ctx, *, message):
 
-    if await owner_only_ctx(ctx):
+    if await lock_check_ctx(ctx):
         return
 
     try:
@@ -190,13 +205,14 @@ async def say(ctx, *, message):
     await ctx.send(message)
 
 # --------------------
-# SEAL (TIMEOUT SYSTEM)
+# SEAL SYSTEM
 # --------------------
 
 @bot.command(name="seal")
+@commands.has_permissions(administrator=True)
 async def seal(ctx, member: discord.Member, duration: str = None):
 
-    if await owner_only_ctx(ctx):
+    if await lock_check_ctx(ctx):
         return
 
     if member.timed_out_until is not None:
@@ -209,59 +225,97 @@ async def seal(ctx, member: discord.Member, duration: str = None):
     else:
         td = parse_duration(duration)
         if not td:
-            return await ctx.send("❌ Invalid format.")
+            return await ctx.send("❌ Invalid format (10m, 1h, 2d).")
         label = duration
 
     try:
-        await member.timeout(td, reason=f"Sealed by owner")
+        await member.timeout(td, reason=f"Sealed by {ctx.author}")
         await ctx.send(f"🔒 {member.mention} sealed for {label}")
     except:
         await ctx.send("❌ Missing permissions.")
 
-# --------------------
-# UNSEAL
-# --------------------
-
 @bot.command(name="unseal")
+@commands.has_permissions(administrator=True)
 async def unseal(ctx, member: discord.Member):
 
-    if await owner_only_ctx(ctx):
+    if await lock_check_ctx(ctx):
         return
 
     await member.timeout(None)
     await ctx.send(f"🔓 {member.mention} unsealed.")
 
 # --------------------
-# SLASH COMMANDS (OWNER ONLY)
+# BOT LOCK COMMANDS
 # --------------------
+
+@bot.command(name="disable")
+@commands.has_permissions(administrator=True)
+async def disable(ctx):
+
+    global bot_locked
+    bot_locked = True
+    save_lock()
+
+    await ctx.send("🚫 Bot commands disabled.")
+
+@bot.command(name="enable")
+@commands.has_permissions(administrator=True)
+async def enable(ctx):
+
+    global bot_locked
+    bot_locked = False
+    save_lock()
+
+    await ctx.send("✅ Bot commands enabled.")
+
+# --------------------
+# SLASH COMMANDS
+# --------------------
+
+def lock_check_interaction(interaction: discord.Interaction):
+    if is_locked():
+        return True
+    return False
 
 @bot.tree.command(name="mysobs")
 async def mysobs_slash(interaction: discord.Interaction):
 
-    if not owner_only_interaction(interaction):
-        return await interaction.response.send_message("🚫 Owner only.", ephemeral=True)
+    if is_locked():
+        return await interaction.response.send_message("🚫 Disabled", ephemeral=True)
 
     count = scores.get(str(interaction.user.id), 0)
     await interaction.response.send_message(f"😭 {count} sobs")
 
-@bot.tree.command(name="say")
-async def say_slash(interaction: discord.Interaction, message: str):
+@bot.tree.command(name="topsobs")
+async def topsobs_slash(interaction: discord.Interaction):
 
-    if not owner_only_interaction(interaction):
-        return await interaction.response.send_message("🚫 Owner only.", ephemeral=True)
+    if is_locked():
+        return await interaction.response.send_message("🚫 Disabled", ephemeral=True)
 
-    await interaction.response.send_message(message)
+    await interaction.response.send_message("Use prefix version for now (or I can upgrade this).")
 
 @bot.tree.command(name="disable")
+@app_commands.checks.has_permissions(administrator=True)
 async def disable_slash(interaction: discord.Interaction):
 
-    if not owner_only_interaction(interaction):
-        return await interaction.response.send_message("🚫 Owner only.", ephemeral=True)
+    global bot_locked
+    bot_locked = True
+    save_lock()
 
-    await interaction.response.send_message("🚫 Disabled (you can extend logic here).")
+    await interaction.response.send_message("🚫 Disabled")
+
+@bot.tree.command(name="enable")
+@app_commands.checks.has_permissions(administrator=True)
+async def enable_slash(interaction: discord.Interaction):
+
+    global bot_locked
+    bot_locked = False
+    save_lock()
+
+    await interaction.response.send_message("✅ Enabled")
 
 # --------------------
-# RUN
+# RUN BOT
 # --------------------
 
 bot.run(TOKEN)
