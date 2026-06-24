@@ -2,9 +2,10 @@ import discord
 from discord.ext import commands
 import json
 import os
+import datetime
+import re
 from dotenv import load_dotenv
 
-# Load token
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 
@@ -17,7 +18,6 @@ bot = commands.Bot(command_prefix="slate ", intents=intents)
 
 SOB_EMOJI = "😭"
 DATA_FILE = "sob_scores.json"
-SEALED_USERS_FILE = "sealed_users.json"
 
 # --------------------
 # LOAD DATA
@@ -29,19 +29,34 @@ if os.path.exists(DATA_FILE):
 else:
     scores = {}
 
-if os.path.exists(SEALED_USERS_FILE):
-    with open(SEALED_USERS_FILE, "r") as f:
-        sealed_users = json.load(f)
-else:
-    sealed_users = []
-
 def save_scores():
     with open(DATA_FILE, "w") as f:
         json.dump(scores, f)
 
-def save_sealed_users():
-    with open(SEALED_USERS_FILE, "w") as f:
-        json.dump(sealed_users, f)
+# --------------------
+# DURATION PARSER
+# --------------------
+
+def parse_duration(text: str):
+    text = text.lower().strip()
+
+    match = re.match(r"(\d+)(s|m|h|d)", text)
+    if not match:
+        return None
+
+    value = int(match.group(1))
+    unit = match.group(2)
+
+    if unit == "s":
+        return datetime.timedelta(seconds=value)
+    elif unit == "m":
+        return datetime.timedelta(minutes=value)
+    elif unit == "h":
+        return datetime.timedelta(hours=value)
+    elif unit == "d":
+        return datetime.timedelta(days=value)
+
+    return None
 
 # --------------------
 # EVENTS
@@ -51,23 +66,6 @@ def save_sealed_users():
 async def on_ready():
     print(f"Logged in as {bot.user}")
 
-# Delete messages from sealed users
-@bot.event
-async def on_message(message):
-
-    if message.author.bot:
-        return
-
-    if str(message.author.id) in sealed_users:
-        try:
-            await message.delete()
-            return
-        except discord.Forbidden:
-            pass
-
-    await bot.process_commands(message)
-
-# Track 😭 reactions
 @bot.event
 async def on_raw_reaction_add(payload):
 
@@ -92,8 +90,21 @@ async def on_raw_reaction_add(payload):
     except Exception as e:
         print(f"Reaction error: {e}")
 
+# IMPORTANT: allow commands to work
+@bot.event
+async def on_message(message):
+
+    if message.author.bot:
+        return
+
+    if message.author.timed_out_until is not None:
+        # still allow commands, but prevent message handling confusion
+        pass
+
+    await bot.process_commands(message)
+
 # --------------------
-# COMMANDS
+# TOP SOBBERS (TOP 5)
 # --------------------
 
 @bot.command(name="topsobs")
@@ -150,6 +161,10 @@ async def topsobs(ctx):
 
     await ctx.send(embed=embed)
 
+# --------------------
+# MY SOBS
+# --------------------
+
 @bot.command(name="mysobs")
 async def mysobs(ctx):
 
@@ -166,7 +181,7 @@ async def mysobs(ctx):
     await ctx.send(embed=embed)
 
 # --------------------
-# SAY COMMAND (ADMIN ONLY)
+# SAY (ADMIN ONLY)
 # --------------------
 
 @bot.command(name="say")
@@ -175,7 +190,7 @@ async def say(ctx, *, message):
 
     try:
         await ctx.message.delete()
-    except discord.Forbidden:
+    except:
         pass
 
     await ctx.send(message)
@@ -184,40 +199,54 @@ async def say(ctx, *, message):
 async def say_error(ctx, error):
 
     if isinstance(error, commands.MissingPermissions):
-        try:
-            await ctx.message.delete()
-        except:
-            pass
-
         await ctx.send("❌ Administrator only.", delete_after=5)
 
 # --------------------
-# SEAL COMMAND
+# SEAL SYSTEM (TIMEOUT MUTE)
 # --------------------
 
 @bot.command(name="seal")
 @commands.has_permissions(administrator=True)
-async def seal(ctx, member: discord.Member):
+async def seal(ctx, member: discord.Member, duration: str = None):
 
-    user_id = str(member.id)
+    # TOGGLE OFF IF ALREADY MUTED
+    if member.timed_out_until is not None:
+        try:
+            await member.timeout(None)
+            await ctx.send(f"🔓 {member.mention} has been unsealed.")
+        except discord.Forbidden:
+            await ctx.send("❌ I don't have permission.")
+        return
 
-    if user_id in sealed_users:
-        sealed_users.remove(user_id)
-        save_sealed_users()
-        await ctx.send(f"🔓 {member.mention} unsealed.")
+    # DEFAULT = 1 HOUR
+    if duration is None:
+        timeout_duration = datetime.timedelta(hours=1)
+        label = "1h"
     else:
-        sealed_users.append(user_id)
-        save_sealed_users()
-        await ctx.send(f"🔒 {member.mention} sealed (messages will be deleted).")
+        parsed = parse_duration(duration)
 
-@seal.error
-async def seal_error(ctx, error):
+        if parsed is None:
+            await ctx.send("❌ Use format like 10m, 1h, 2d")
+            return
 
-    if isinstance(error, commands.MissingPermissions):
-        await ctx.send("❌ Administrator only.")
+        timeout_duration = parsed
+        label = duration
 
-    elif isinstance(error, commands.MemberNotFound):
-        await ctx.send("❌ User not found.")
+    try:
+        await member.timeout(timeout_duration, reason=f"Sealed by {ctx.author}")
+        await ctx.send(f"🔒 {member.mention} sealed for `{label}`.")
+    except discord.Forbidden:
+        await ctx.send("❌ Missing permissions.")
+
+@bot.command(name="unseal")
+@commands.has_permissions(administrator=True)
+async def unseal(ctx, member: discord.Member):
+
+    try:
+        await member.timeout(None)
+        await ctx.send(f"🔓 {member.mention} unsealed.")
+    except discord.Forbidden:
+        await ctx.send("❌ Missing permissions.")
 
 # --------------------
 # RUN BOT
