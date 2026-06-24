@@ -1,3 +1,4 @@
+```python
 import discord
 from discord.ext import commands
 import json
@@ -44,6 +45,7 @@ async def on_raw_reaction_add(payload):
 
     try:
         channel = bot.get_channel(payload.channel_id)
+
         if channel is None:
             channel = await bot.fetch_channel(payload.channel_id)
 
@@ -65,7 +67,11 @@ async def topsobs(ctx):
         await ctx.send("No 😭 reactions tracked yet.")
         return
 
-    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    sorted_scores = sorted(
+        scores.items(),
+        key=lambda x: x[1],
+        reverse=True
+    )
 
     embed = discord.Embed(
         title="😭 Top Sobbers",
@@ -75,6 +81,16 @@ async def topsobs(ctx):
 
     medals = ["🥇", "🥈", "🥉"]
 
+    user_rank = None
+    user_count = scores.get(str(ctx.author.id), 0)
+
+    # Find user's rank
+    for rank, (user_id, count) in enumerate(sorted_scores, start=1):
+        if user_id == str(ctx.author.id):
+            user_rank = rank
+            break
+
+    # Show top 10
     for rank, (user_id, count) in enumerate(sorted_scores[:10], start=1):
 
         member = ctx.guild.get_member(int(user_id))
@@ -90,15 +106,24 @@ async def topsobs(ctx):
 
         prefix = medals[rank - 1] if rank <= 3 else f"#{rank}"
 
+        # Highlight command user
+        if user_id == str(ctx.author.id):
+            name = f"⭐ {name} (You)"
+
         embed.add_field(
             name=f"{prefix} {name}",
             value=f"😭 {count} sobs",
             inline=False
         )
 
+    if user_rank:
+        embed.set_footer(
+            text=f"Your Rank: #{user_rank} • 😭 {user_count} sobs"
+        )
+
     await ctx.send(embed=embed)
 
-# YOUR OWN SOB COUNT
+# YOUR SOB COUNT
 @bot.command(name="mysobs")
 async def mysobs(ctx):
 
@@ -111,25 +136,39 @@ async def mysobs(ctx):
         color=0x5865F2
     )
 
-    embed.set_thumbnail(url=ctx.author.display_avatar.url)
+    embed.set_thumbnail(
+        url=ctx.author.display_avatar.url
+    )
 
     await ctx.send(embed=embed)
 
-# SAY COMMAND
+# ADMIN SAY COMMAND
 @bot.command(name="say")
 @commands.has_permissions(administrator=True)
 async def say(ctx, *, message):
+
     try:
-        await ctx.message.delete()  # Delete the user's command message
+        await ctx.message.delete()
     except discord.Forbidden:
         pass
 
     await ctx.send(message)
 
-# Error if user isn't an admin
+# SAY COMMAND ERROR
 @say.error
 async def say_error(ctx, error):
+
     if isinstance(error, commands.MissingPermissions):
-        await ctx.send("❌ You need administrator permissions to use this command.")
+
+        try:
+            await ctx.message.delete()
+        except discord.Forbidden:
+            pass
+
+        await ctx.send(
+            "❌ You must have Administrator permissions to use this command.",
+            delete_after=5
+        )
 
 bot.run(TOKEN)
+```
