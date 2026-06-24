@@ -27,9 +27,7 @@ LOCK_FILE = "bot_lock.json"
 # --------------------
 
 TRIGGERS = {
-    "MAHORAGA": "https://tenor.com/view/megumi-mahoraga-ritual-gif-8462616184562925653",
     "brick this nigga": "https://tenor.com/view/clonk-hooplah-brick-spongebob-noisy-gif-17264229",
-    "vghhvghvg": "https://media.tenor.com/yourgif3.gif",
 }
 
 # --------------------
@@ -342,5 +340,79 @@ async def enable_slash(interaction: discord.Interaction):
 # --------------------
 # RUN BOT
 # --------------------
+bot = commands.Bot(command_prefix="slate ", intents=intents)
+bot.remove_command("help")
+# --------------------
+# HELP COMMAND
+# --------------------
 
+@bot.command(name="help")
+async def help_command(ctx):
+
+    if await lock_check_ctx(ctx):
+        return
+
+    embed = discord.Embed(
+        title="📖 Slate Bot Help",
+        description="Available commands",
+        color=0x5865F2
+    )
+
+    prefix = "slate "
+
+    # Public commands
+    public_cmds = [
+        f"`{prefix}help` - Shows this menu",
+        f"`{prefix}mysobs` - View your sob count",
+        f"`{prefix}topsobs` - View sob leaderboard",
+    ]
+
+    embed.add_field(
+        name="😭 Public Commands",
+        value="\n".join(public_cmds),
+        inline=False
+    )
+
+    # Only show admin commands to admins
+    if ctx.author.guild_permissions.administrator:
+
+        admin_cmds = [
+            f"`{prefix}say <message>`",
+            f"`{prefix}seal @user [10m|1h|2d]`",
+            f"`{prefix}unseal @user`",
+            f"`{prefix}disable`",
+            f"`{prefix}enable`",
+        ]
+
+        embed.add_field(
+            name="🛠️ Admin Commands",
+            value="\n".join(admin_cmds),
+            inline=False
+        )
+
+    embed.add_field(
+        name="⏱️ Seal Examples",
+        value=(
+            "`slate seal @user` = 1 hour\n"
+            "`slate seal @user 10m`\n"
+            "`slate seal @user 1h`\n"
+            "`slate seal @user 2d`"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="🎬 GIF Triggers",
+        value=(
+            "`MAHORAGA`\n"
+            "`brick this nigga`\n"
+            "`vghhvghvg`"
+        ),
+        inline=False
+    )
+
+    embed.set_footer(text=f"Requested by {ctx.author.display_name}")
+
+    await ctx.send(embed=embed)
+    
 bot.run(TOKEN)
