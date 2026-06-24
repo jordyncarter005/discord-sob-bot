@@ -23,6 +23,16 @@ DATA_FILE = "sob_scores.json"
 LOCK_FILE = "bot_lock.json"
 
 # --------------------
+# GIF TRIGGERS (NEW)
+# --------------------
+
+TRIGGERS = {
+    "With this treasure I summon": "https://tenor.com/view/megumi-mahoraga-ritual-gif-8462616184562925653",
+    "brick this nigga": "https://tenor.com/view/clonk-hooplah-brick-spongebob-noisy-gif-17264229",
+    "vghhvghvg": "https://media.tenor.com/yourgif3.gif",
+}
+
+# --------------------
 # LOAD DATA
 # --------------------
 
@@ -87,6 +97,26 @@ async def on_ready():
     print(f"Logged in as {bot.user}")
     await bot.tree.sync()
     print("Slash commands synced")
+
+# --------------------
+# MESSAGE HANDLER (NEW GIF SYSTEM ADDED HERE)
+# --------------------
+
+@bot.event
+async def on_message(message):
+
+    if message.author.bot:
+        return
+
+    content = message.content.lower()
+
+    # 🎬 GIF TRIGGERS
+    for phrase, gif in TRIGGERS.items():
+        if phrase in content:
+            await message.channel.send(gif)
+            break
+
+    await bot.process_commands(message)
 
 # --------------------
 # REACTION TRACKING
@@ -271,11 +301,6 @@ async def enable(ctx):
 # --------------------
 # SLASH COMMANDS
 # --------------------
-
-def lock_check_interaction(interaction: discord.Interaction):
-    if is_locked():
-        return True
-    return False
 
 @bot.tree.command(name="mysobs")
 async def mysobs_slash(interaction: discord.Interaction):
