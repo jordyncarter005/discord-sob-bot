@@ -27,9 +27,9 @@ LOCK_FILE = "bot_lock.json"
 # --------------------
 
 TRIGGERS = {
-    "Mahoraga": "https://tenor.com/view/megumi-mahoraga-ritual-gif-8462616184562925653",
+    "Mahoraga summon": "https://tenor.com/view/megumi-mahoraga-ritual-gif-8462616184562925653",
     "brick this nigga": "https://tenor.com/view/clonk-hooplah-brick-spongebob-noisy-gif-17264229",
-    "vghhvghvg": "https://media.tenor.com/yourgif3.gif",
+    "brick that nigga": "https://tenor.com/view/clonk-hooplah-brick-spongebob-noisy-gif-17264229",
 }
 
 # --------------------
