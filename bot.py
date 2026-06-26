@@ -1,10 +1,7 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
-import json
-import os
-import datetime
-import re
+import sqlite3, os, datetime
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,332 +12,215 @@ intents.message_content = True
 intents.members = True
 intents.reactions = True
 
-bot = commands.Bot(command_prefix="slate ", intents=intents)
+bot = commands.Bot(command_prefix="slate ", intents=intents, help_command=None)
 
-SOB_EMOJI = "😭"
+db = sqlite3.connect("stats.db")
+cur = db.cursor()
 
-DATA_FILE = "sob_scores.json"
-LOCK_FILE = "bot_lock.json"
+cur.execute("""
+CREATE TABLE IF NOT EXISTS stats(
+guild_id INTEGER,
+user_id INTEGER,
+messages INTEGER DEFAULT 0,
+sobs INTEGER DEFAULT 0,
+weekly_messages INTEGER DEFAULT 0,
+weekly_sobs INTEGER DEFAULT 0,
+PRIMARY KEY(guild_id,user_id)
+)
+""")
+db.commit()
 
-# --------------------
-# GIF TRIGGERS (NEW)
-# --------------------
+SOB = "😭"
 
-TRIGGERS = {
-    "Mahoraga summon": "https://tenor.com/view/megumi-mahoraga-ritual-gif-8462616184562925653",
-    "brick this nigga": "https://tenor.com/view/clonk-hooplah-brick-spongebob-noisy-gif-17264229",
-    "brick that nigga": "https://tenor.com/view/clonk-hooplah-brick-spongebob-noisy-gif-17264229",
-}
+def ensure(gid, uid):
+    cur.execute("INSERT OR IGNORE INTO stats(guild_id,user_id) VALUES(?,?)",(gid,uid))
+    db.commit()
 
-# --------------------
-# LOAD DATA
-# --------------------
+def message_rank(v):
+    if v >= 10000: return "Message Legend"
+    if v >= 5000: return "Veteran"
+    if v >= 1000: return "Active Member"
+    if v >= 250: return "Chatter"
+    return "Newcomer"
 
-if os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "r") as f:
-        scores = json.load(f)
-else:
-    scores = {}
+def sob_rank(v):
+    if v >= 5000: return "Ultimate Sobber"
+    if v >= 1000: return "Diamond Sobber"
+    if v >= 250: return "Gold Sobber"
+    if v >= 100: return "Silver Sobber"
+    if v >= 25: return "Bronze Sobber"
+    return "Fresh Sobber"
 
-def save_scores():
-    with open(DATA_FILE, "w") as f:
-        json.dump(scores, f)
-
-# --------------------
-# BOT LOCK SYSTEM
-# --------------------
-
-if os.path.exists(LOCK_FILE):
-    with open(LOCK_FILE, "r") as f:
-        bot_locked = json.load(f).get("locked", False)
-else:
-    bot_locked = False
-
-def save_lock():
-    with open(LOCK_FILE, "w") as f:
-        json.dump({"locked": bot_locked}, f)
-
-def is_locked():
-    return bot_locked
-
-# --------------------
-# DURATION PARSER
-# --------------------
-
-def parse_duration(text: str):
-    text = text.lower().strip()
-
-    match = re.match(r"(\d+)(s|m|h|d)", text)
-    if not match:
-        return None
-
-    value = int(match.group(1))
-    unit = match.group(2)
-
-    if unit == "s":
-        return datetime.timedelta(seconds=value)
-    elif unit == "m":
-        return datetime.timedelta(minutes=value)
-    elif unit == "h":
-        return datetime.timedelta(hours=value)
-    elif unit == "d":
-        return datetime.timedelta(days=value)
-
-    return None
-
-# --------------------
-# READY
-# --------------------
+@tasks.loop(hours=24)
+async def weekly_reset_check():
+    if datetime.datetime.utcnow().weekday() == 0:
+        cur.execute("UPDATE stats SET weekly_messages=0, weekly_sobs=0")
+        db.commit()
 
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user}")
     await bot.tree.sync()
-    print("Slash commands synced")
-
-# --------------------
-# MESSAGE HANDLER (NEW GIF SYSTEM ADDED HERE)
-# --------------------
+    if not weekly_reset_check.is_running():
+        weekly_reset_check.start()
+    print(f"Ready: {bot.user}")
 
 @bot.event
 async def on_message(message):
-
-    if message.author.bot:
+    if message.author.bot or not message.guild:
         return
-
-    content = message.content.lower()
-
-    # 🎬 GIF TRIGGERS
-    for phrase, gif in TRIGGERS.items():
-        if phrase in content:
-            await message.channel.send(gif)
-            break
-
+    ensure(message.guild.id, message.author.id)
+    cur.execute("""
+    UPDATE stats SET
+    messages=messages+1,
+    weekly_messages=weekly_messages+1
+    WHERE guild_id=? AND user_id=?
+    """,(message.guild.id,message.author.id))
+    db.commit()
     await bot.process_commands(message)
 
-# --------------------
-# REACTION TRACKING
-# --------------------
+@bot.event
+async def on_reaction_add(reaction, user):
+    if user.bot or not reaction.message.guild:
+        return
+    if str(reaction.emoji) == SOB:
+        target = reaction.message.author
+        ensure(reaction.message.guild.id, target.id)
+        cur.execute("""
+        UPDATE stats SET
+        sobs=sobs+1,
+        weekly_sobs=weekly_sobs+1
+        WHERE guild_id=? AND user_id=?
+        """,(reaction.message.guild.id,target.id))
+        db.commit()
+
+async def profile_embed(member, guild):
+    ensure(guild.id, member.id)
+    cur.execute("""SELECT messages,sobs,weekly_messages,weekly_sobs
+    FROM stats WHERE guild_id=? AND user_id=?""",(guild.id,member.id))
+    m,s,wm,ws = cur.fetchone()
+
+    cur.execute("""SELECT COUNT(*)+1 FROM stats
+    WHERE guild_id=? AND sobs >
+    (SELECT sobs FROM stats WHERE guild_id=? AND user_id=?)
+    """,(guild.id,guild.id,member.id))
+    place = cur.fetchone()[0]
+
+    e = discord.Embed(title=f"{member.display_name}'s Profile")
+    e.set_thumbnail(url=member.display_avatar.url)
+    e.add_field(name="Messages", value=m)
+    e.add_field(name="SOBs", value=s)
+    e.add_field(name="Weekly Messages", value=wm)
+    e.add_field(name="Weekly SOBs", value=ws)
+    e.add_field(name="Message Rank", value=message_rank(m), inline=False)
+    e.add_field(name="SOB Rank", value=sob_rank(s))
+    e.add_field(name="Leaderboard Position", value=f"#{place}")
+    return e
+
+@bot.command()
+async def profile(ctx, member: discord.Member=None):
+    member = member or ctx.author
+    await ctx.send(embed=await profile_embed(member, ctx.guild))
+
+@bot.command()
+async def leaderboard(ctx):
+    cur.execute("""SELECT user_id,sobs,messages
+    FROM stats WHERE guild_id=?
+    ORDER BY sobs DESC LIMIT 10""",(ctx.guild.id,))
+    rows=cur.fetchall()
+    e=discord.Embed(title="🏆 SOB Leaderboard")
+    for i,r in enumerate(rows,1):
+        m=ctx.guild.get_member(r[0])
+        if m:
+            e.add_field(name=f"#{i} {m.display_name}",
+                        value=f"😭 {r[1]} | 💬 {r[2]}",
+                        inline=False)
+    await ctx.send(embed=e)
+
+@bot.command()
+async def topmessages(ctx):
+    cur.execute("""SELECT user_id,messages
+    FROM stats WHERE guild_id=?
+    ORDER BY messages DESC LIMIT 10""",(ctx.guild.id,))
+    rows=cur.fetchall()
+    e=discord.Embed(title="💬 Message Leaderboard")
+    for i,r in enumerate(rows,1):
+        m=ctx.guild.get_member(r[0])
+        if m:
+            e.add_field(name=f"#{i} {m.display_name}", value=r[1], inline=False)
+    await ctx.send(embed=e)
+
+@bot.command()
+async def weekly(ctx):
+    cur.execute("""SELECT user_id,weekly_sobs,weekly_messages
+    FROM stats WHERE guild_id=?
+    ORDER BY weekly_sobs DESC LIMIT 10""",(ctx.guild.id,))
+    rows=cur.fetchall()
+    e=discord.Embed(title="📅 Weekly Leaderboard")
+    for i,r in enumerate(rows,1):
+        m=ctx.guild.get_member(r[0])
+        if m:
+            e.add_field(name=f"#{i} {m.display_name}",
+                        value=f"😭 {r[1]} | 💬 {r[2]}",
+                        inline=False)
+    await ctx.send(embed=e)
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def addsobs(ctx, member: discord.Member, amount: int):
+    ensure(ctx.guild.id, member.id)
+    cur.execute("UPDATE stats SET sobs=sobs+? WHERE guild_id=? AND user_id=?",
+                (amount,ctx.guild.id,member.id))
+    db.commit()
+    await ctx.send("Done.")
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def addmessages(ctx, member: discord.Member, amount: int):
+    ensure(ctx.guild.id, member.id)
+    cur.execute("UPDATE stats SET messages=messages+? WHERE guild_id=? AND user_id=?",
+                (amount,ctx.guild.id,member.id))
+    db.commit()
+    await ctx.send("Done.")
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def resetuser(ctx, member: discord.Member):
+    cur.execute("""DELETE FROM stats
+    WHERE guild_id=? AND user_id=?""",(ctx.guild.id,member.id))
+    db.commit()
+    await ctx.send("User reset.")
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def resetserver(ctx):
+    cur.execute("DELETE FROM stats WHERE guild_id=?",(ctx.guild.id,))
+    db.commit()
+    await ctx.send("Server stats reset.")
+
+@bot.command()
+async def help(ctx):
+    await ctx.send("""
+**Slate Bot**
+slate profile
+slate leaderboard
+slate weekly
+slate topmessages
+slate addsobs
+slate addmessages
+slate resetuser
+slate resetserver
+""")
+
+@bot.tree.command(name="profile")
+async def slash_profile(interaction: discord.Interaction, member: discord.Member=None):
+    member = member or interaction.user
+    await interaction.response.send_message(embed=await profile_embed(member, interaction.guild))
 
 @bot.event
-async def on_raw_reaction_add(payload):
-
-    if str(payload.emoji) != SOB_EMOJI:
-        return
-
-    if payload.user_id == bot.user.id:
-        return
-
-    try:
-        channel = bot.get_channel(payload.channel_id) or await bot.fetch_channel(payload.channel_id)
-        message = await channel.fetch_message(payload.message_id)
-
-        user_id = str(message.author.id)
-
-        scores[user_id] = scores.get(user_id, 0) + 1
-        save_scores()
-
-    except:
-        pass
-
-# --------------------
-# PREFIX COMMAND GUARD
-# --------------------
-
-async def lock_check_ctx(ctx):
-    if is_locked():
-        await ctx.send("🚫 Bot commands are currently disabled.")
-        return True
-    return False
-
-# --------------------
-# TOP SOBS
-# --------------------
-
-@bot.command(name="topsobs")
-async def topsobs(ctx):
-
-    if await lock_check_ctx(ctx):
-        return
-
-    if not scores:
-        return await ctx.send("No 😭 reactions tracked yet.")
-
-    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-
-    embed = discord.Embed(title="😭 Top Sobbers", color=0x5865F2)
-
-    medals = ["🥇", "🥈", "🥉"]
-
-    user_id_check = str(ctx.author.id)
-    user_rank = None
-    user_count = scores.get(user_id_check, 0)
-
-    for rank, (uid, _) in enumerate(sorted_scores, start=1):
-        if uid == user_id_check:
-            user_rank = rank
-            break
-
-    for rank, (user_id, count) in enumerate(sorted_scores[:5], start=1):
-
-        member = ctx.guild.get_member(int(user_id))
-        name = member.display_name if member else f"User {user_id}"
-
-        if user_id == user_id_check:
-            name = f"⭐ {name} (You)"
-
-        prefix = medals[rank - 1] if rank <= 3 else f"#{rank}"
-
-        embed.add_field(
-            name=f"{prefix} {name}",
-            value=f"😭 {count} sobs",
-            inline=False
-        )
-
-    if user_rank:
-        embed.set_footer(text=f"Your Rank: #{user_rank} • 😭 {user_count} sobs")
-
-    await ctx.send(embed=embed)
-
-# --------------------
-# MY SOBS
-# --------------------
-
-@bot.command(name="mysobs")
-async def mysobs(ctx):
-
-    if await lock_check_ctx(ctx):
-        return
-
-    count = scores.get(str(ctx.author.id), 0)
-
-    await ctx.send(f"😭 You have {count} sob reactions.")
-
-# --------------------
-# SAY
-# --------------------
-
-@bot.command(name="say")
-@commands.has_permissions(administrator=True)
-async def say(ctx, *, message):
-
-    if await lock_check_ctx(ctx):
-        return
-
-    try:
-        await ctx.message.delete()
-    except:
-        pass
-
-    await ctx.send(message)
-
-# --------------------
-# SEAL SYSTEM
-# --------------------
-
-@bot.command(name="seal")
-@commands.has_permissions(administrator=True)
-async def seal(ctx, member: discord.Member, duration: str = None):
-
-    if await lock_check_ctx(ctx):
-        return
-
-    if member.timed_out_until is not None:
-        await member.timeout(None)
-        return await ctx.send(f"🔓 {member.mention} unsealed.")
-
-    if duration is None:
-        td = datetime.timedelta(hours=1)
-        label = "1h"
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("You don't have permission.")
     else:
-        td = parse_duration(duration)
-        if not td:
-            return await ctx.send("❌ Invalid format (10m, 1h, 2d).")
-        label = duration
-
-    try:
-        await member.timeout(td, reason=f"Sealed by {ctx.author}")
-        await ctx.send(f"🔒 {member.mention} sealed for {label}")
-    except:
-        await ctx.send("❌ Missing permissions.")
-
-@bot.command(name="unseal")
-@commands.has_permissions(administrator=True)
-async def unseal(ctx, member: discord.Member):
-
-    if await lock_check_ctx(ctx):
-        return
-
-    await member.timeout(None)
-    await ctx.send(f"🔓 {member.mention} unsealed.")
-
-# --------------------
-# BOT LOCK COMMANDS
-# --------------------
-
-@bot.command(name="disable")
-@commands.has_permissions(administrator=True)
-async def disable(ctx):
-
-    global bot_locked
-    bot_locked = True
-    save_lock()
-
-    await ctx.send("🚫 Bot commands disabled.")
-
-@bot.command(name="enable")
-@commands.has_permissions(administrator=True)
-async def enable(ctx):
-
-    global bot_locked
-    bot_locked = False
-    save_lock()
-
-    await ctx.send("✅ Bot commands enabled.")
-
-# --------------------
-# SLASH COMMANDS
-# --------------------
-
-@bot.tree.command(name="mysobs")
-async def mysobs_slash(interaction: discord.Interaction):
-
-    if is_locked():
-        return await interaction.response.send_message("🚫 Disabled", ephemeral=True)
-
-    count = scores.get(str(interaction.user.id), 0)
-    await interaction.response.send_message(f"😭 {count} sobs")
-
-@bot.tree.command(name="topsobs")
-async def topsobs_slash(interaction: discord.Interaction):
-
-    if is_locked():
-        return await interaction.response.send_message("🚫 Disabled", ephemeral=True)
-
-    await interaction.response.send_message("Use prefix version for now (or I can upgrade this).")
-
-@bot.tree.command(name="disable")
-@app_commands.checks.has_permissions(administrator=True)
-async def disable_slash(interaction: discord.Interaction):
-
-    global bot_locked
-    bot_locked = True
-    save_lock()
-
-    await interaction.response.send_message("🚫 Disabled")
-
-@bot.tree.command(name="enable")
-@app_commands.checks.has_permissions(administrator=True)
-async def enable_slash(interaction: discord.Interaction):
-
-    global bot_locked
-    bot_locked = False
-    save_lock()
-
-    await interaction.response.send_message("✅ Enabled")
-
-# --------------------
-# RUN BOT
-# --------------------
+        await ctx.send(f"Error: {error}")
 
 bot.run(TOKEN)
