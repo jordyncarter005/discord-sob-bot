@@ -41,9 +41,9 @@ CREATE TABLE IF NOT EXISTS stats(
     guild_id INTEGER,
     user_id INTEGER,
     messages INTEGER DEFAULT 0,
-    sobs INTEGER DEFAULT 0,
+    Sobs INTEGER DEFAULT 0,
     weekly_messages INTEGER DEFAULT 0,
-    weekly_sobs INTEGER DEFAULT 0,
+    weekly_Sobs INTEGER DEFAULT 0,
     PRIMARY KEY(guild_id, user_id)
 )
 """)
@@ -76,16 +76,16 @@ def message_rank(messages: int):
     return "🌱 Newcomer"
 
 
-def sob_rank(sobs: int):
-    if sobs >= 5000:
+def sob_rank(Sobs: int):
+    if Sobs >= 5000:
         return "👑 Ultimate Sobber"
-    if sobs >= 1000:
+    if Sobs >= 1000:
         return "💎 Diamond Sobber"
-    if sobs >= 250:
+    if Sobs >= 250:
         return "🥇 Gold Sobber"
-    if sobs >= 100:
+    if Sobs >= 100:
         return "🥈 Silver Sobber"
-    if sobs >= 25:
+    if Sobs >= 25:
         return "🥉 Bronze Sobber"
     return "😭 Fresh Sobber"
 
@@ -98,7 +98,7 @@ def make_embed(title, color=discord.Color.blurple()):
     )
 
     embed.set_footer(
-        text="Slate Bot"
+        text="/slate"
     )
 
     return embed
@@ -109,20 +109,20 @@ async def profile_embed(member: discord.Member, guild: discord.Guild):
     ensure(guild.id, member.id)
 
     cur.execute("""
-        SELECT messages,sobs,weekly_messages,weekly_sobs
+        SELECT messages,Sobs,weekly_messages,weekly_Sobs
         FROM stats
         WHERE guild_id=? AND user_id=?
     """, (guild.id, member.id))
 
-    messages, sobs, weekly_messages, weekly_sobs = cur.fetchone()
+    messages, Sobs, weekly_messages, weekly_Sobs = cur.fetchone()
 
     cur.execute("""
         SELECT COUNT(*)+1
         FROM stats
         WHERE guild_id=?
-        AND sobs >
+        AND Sobs >
         (
-            SELECT sobs
+            SELECT Sobs
             FROM stats
             WHERE guild_id=? AND user_id=?
         )
@@ -143,44 +143,44 @@ async def profile_embed(member: discord.Member, guild: discord.Guild):
         )
 
     embed.add_field(
-        name="💬 Messages",
+        name="Messages",
         value=f"**{messages:,}**",
         inline=True
     )
 
     embed.add_field(
-        name="😭 SOBs",
-        value=f"**{sobs:,}**",
+        name="Sobs",
+        value=f"**{Sobs:,}**",
         inline=True
     )
 
     embed.add_field(
-        name="🏅 Leaderboard",
+        name="Leaderboard",
         value=f"#{place}",
         inline=True
     )
 
     embed.add_field(
-        name="📅 Weekly Messages",
+        name="Weekly Messages",
         value=f"{weekly_messages:,}",
         inline=True
     )
 
     embed.add_field(
-        name="📅 Weekly SOBs",
-        value=f"{weekly_sobs:,}",
+        name="Weekly Sobs",
+        value=f"{weekly_Sobs:,}",
         inline=True
     )
 
     embed.add_field(
-        name="💬 Message Rank",
+        name="Message Rank",
         value=message_rank(messages),
         inline=False
     )
 
     embed.add_field(
-        name="😭 SOB Rank",
-        value=sob_rank(sobs),
+        name="Sob Rank",
+        value=sob_rank(Sobs),
         inline=False
     )
 
@@ -194,7 +194,7 @@ async def profile_embed(member: discord.Member, guild: discord.Guild):
 async def weekly_reset_check():
     if datetime.datetime.utcnow().weekday() == 0:
         cur.execute(
-            "UPDATE stats SET weekly_messages=0, weekly_sobs=0"
+            "UPDATE stats SET weekly_messages=0, weekly_Sobs=0"
         )
         db.commit()
 
@@ -253,8 +253,8 @@ async def on_reaction_add(reaction, user):
     cur.execute("""
         UPDATE stats
         SET
-            sobs = sobs + 1,
-            weekly_sobs = weekly_sobs + 1
+            Sobs = Sobs + 1,
+            weekly_Sobs = weekly_Sobs + 1
         WHERE guild_id=? AND user_id=?
     """, (reaction.message.guild.id, target.id))
 
@@ -279,16 +279,16 @@ async def profile(ctx, member: discord.Member = None):
 async def leaderboard(ctx):
 
     cur.execute("""
-        SELECT user_id, sobs, messages
+        SELECT user_id, Sobs, messages
         FROM stats
         WHERE guild_id=?
-        ORDER BY sobs DESC
+        ORDER BY Sobs DESC
         LIMIT 10
     """, (ctx.guild.id,))
 
     rows = cur.fetchall()
 
-    embed = make_embed("🏆 SOB Leaderboard")
+    embed = make_embed("Sob Leaderboard")
 
     if ctx.guild.icon:
         embed.set_thumbnail(url=ctx.guild.icon.url)
@@ -306,7 +306,7 @@ async def leaderboard(ctx):
 
         embed.add_field(
             name=f"{rank} {member.display_name}",
-            value=f"😭 **{row[1]:,}** SOBs\n💬 **{row[2]:,}** Messages",
+            value=f"😭 **{row[1]:,}** Sobs\n💬 **{row[2]:,}** Messages",
             inline=False
         )
 
@@ -355,10 +355,10 @@ async def topmessages(ctx):
 async def weekly(ctx):
 
     cur.execute("""
-        SELECT user_id, weekly_sobs, weekly_messages
+        SELECT user_id, weekly_Sobs, weekly_messages
         FROM stats
         WHERE guild_id=?
-        ORDER BY weekly_sobs DESC
+        ORDER BY weekly_Sobs DESC
         LIMIT 10
     """, (ctx.guild.id,))
 
@@ -382,7 +382,7 @@ async def weekly(ctx):
 
         embed.add_field(
             name=f"{rank} {member.display_name}",
-            value=f"😭 **{row[1]:,}** Weekly SOBs\n💬 **{row[2]:,}** Weekly Messages",
+            value=f"😭 **{row[1]:,}** Weekly Sobs\n💬 **{row[2]:,}** Weekly Messages",
             inline=False
         )
 
@@ -407,7 +407,7 @@ async def resetuser(ctx, member: discord.Member):
     db.commit()
 
     embed = make_embed(
-        "♻️ User Statistics Reset",
+        "User Statistics Reset",
         discord.Color.orange()
     )
 
@@ -455,7 +455,7 @@ async def resetserver(ctx):
 @bot.command(name="help")
 async def help_command(ctx):
 
-    embed = make_embed("📖 Slate Bot Commands")
+    embed = make_embed("Slate Commands")
 
     if ctx.guild.icon:
         embed.set_thumbnail(url=ctx.guild.icon.url)
@@ -476,17 +476,11 @@ async def help_command(ctx):
     )
 
     embed.add_field(
-        name="🛠 Administrator",
+        name="🛠 Admin",
         value=(
             "`resetuser @member`\n"
             "`resetserver`"
         ),
-        inline=False
-    )
-
-    embed.add_field(
-        name="✨ Slash Commands",
-        value="`/profile`",
         inline=False
     )
 
