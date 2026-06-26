@@ -66,28 +66,28 @@ def ensure(guild_id: int, user_id: int):
 
 def message_rank(messages: int):
     if messages >= 10000:
-        return "🏆 Message Legend"
+        return "Upper Moon 1"
     if messages >= 5000:
-        return "💎 Veteran"
+        return "Upper Moon 2"
     if messages >= 1000:
-        return "⭐ Active Member"
+        return "Lower Moon 1"
     if messages >= 250:
-        return "💬 Chatter"
-    return "🌱 Newcomer"
+        return "Lower Moon 2"
+    return "Demon"
 
 
 def sob_rank(Sobs: int):
     if Sobs >= 5000:
-        return "👑 Ultimate Sobber"
+        return "Special Grade"
     if Sobs >= 1000:
-        return "💎 Diamond Sobber"
+        return "Grade 1"
     if Sobs >= 250:
-        return "🥇 Gold Sobber"
+        return "Grade 2"
     if Sobs >= 100:
-        return "🥈 Silver Sobber"
+        return "Grade 3"
     if Sobs >= 25:
-        return "🥉 Bronze Sobber"
-    return "😭 Fresh Sobber"
+        return "Grade 4"
+    return "Sorcerer"
 
 
 def make_embed(title, color=discord.Color.blurple()):
