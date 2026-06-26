@@ -306,7 +306,7 @@ async def leaderboard(ctx):
 
         embed.add_field(
             name=f"{rank} {member.display_name}",
-            value=f"😭 **{row[1]:,}** Sobs\n💬 **{row[2]:,}** Messages",
+            value=f"😭 **{row[1]:,}** Sobs\n💬",
             inline=False
         )
 
