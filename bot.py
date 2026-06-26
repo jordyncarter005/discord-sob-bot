@@ -164,9 +164,6 @@ async def weekly(ctx):
                         inline=False)
     await ctx.send(embed=e)
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def addsobs(ctx, member: discord.Member, amount: int):
     ensure(ctx.guild.id, member.id)
     cur.execute("UPDATE stats SET sobs=sobs+? WHERE guild_id=? AND user_id=?",
                 (amount,ctx.guild.id,member.id))
