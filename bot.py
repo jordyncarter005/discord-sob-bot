@@ -446,7 +446,35 @@ async def resetserver(ctx):
         embed.set_thumbnail(url=ctx.guild.icon.url)
 
     await ctx.send(embed=embed)
+@bot.command()
+async def ping(ctx):
 
+    latency = round(bot.latency * 1000)
+
+    if latency < 100:
+        color = discord.Color.green()
+        status = "🟢"
+    elif latency < 200:
+        color = discord.Color.gold()
+        status = "🟡"
+    else:
+        color = discord.Color.red()
+        status = "🔴"
+
+    embed = make_embed(
+        "Pong!",
+        color
+    )
+
+    embed.description = (
+        f"**Bot Latency:** `{latency} ms`\n"
+        f"**Connection:** {status}"
+    )
+
+    if ctx.guild.icon:
+        embed.set_thumbnail(url=ctx.guild.icon.url)
+
+    await ctx.send(embed=embed)
 
 # -----------------------------
 # Help Command
