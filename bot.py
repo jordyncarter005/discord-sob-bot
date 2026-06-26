@@ -131,7 +131,7 @@ async def profile_embed(member: discord.Member, guild: discord.Guild):
     place = cur.fetchone()[0]
 
     embed = make_embed(
-        f"{member.display_name}'s Slate Profile"
+        f"{member.display_name}'s Profile"
     )
 
     embed.set_thumbnail(url=member.display_avatar.url)
@@ -276,7 +276,7 @@ async def profile(ctx, member: discord.Member = None):
 
 
 @bot.command()
-async def leaderboard(ctx):
+async def topsobs(ctx):
 
     cur.execute("""
         SELECT user_id, Sobs, messages
@@ -468,7 +468,7 @@ async def help_command(ctx):
         name="📊 Statistics",
         value=(
             "`profile [member]`\n"
-            "`leaderboard`\n"
+            "`topsobs`\n"
             "`topmessages`\n"
             "`weekly`"
         ),
